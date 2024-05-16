@@ -105,7 +105,6 @@ void loop() {
     if (millis() - ledToggleTime >= toggleInterval) {
       ledToggleTime += toggleInterval;  // Update the LED toggle time
       ledState = !ledState;             // Toggle state
-      Serial.println("toggling");
       if (ledState) {
         analogWrite(LED, map(scaled_lum, 0, 100, 0, 255)); // on
       } else {
@@ -134,7 +133,7 @@ void updateMain(int srem, int hz, int lum) {
   const int row0 = 4;
   const int row1 = 22;
   const int col0 = 0;
-  const int col1 = 44;
+  const int col1 = 48;
   const int col2 = 92;
 
   display.clearDisplay();
