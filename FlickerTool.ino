@@ -15,7 +15,6 @@ const String VERSION = "v1.0";
 #define KNOB_HZ A5
 #define KNOB_LUM A4
 #define LED 10
-#define PWM_FREQ 1000
 
 // Declaration for an SSD1306 display connected to I2C (SDA, SCL pins)
 // The pins for I2C are defined by the Wire-library.
@@ -23,7 +22,7 @@ const String VERSION = "v1.0";
 #define SCREEN_ADDRESS 0x3C  ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
-const int range_hz[2] = { 5, 30 };
+const int range_hz[2] = { 1, 50 };
 const int range_lum[2] = { 0, 100 };
 
 void setup() {
@@ -74,20 +73,33 @@ int countdown;
 bool ledState = LOW;
 unsigned long ledToggleTime;
 
+void checkInputs() {
+  int hz = analogRead(KNOB_HZ);
+  int lum = analogRead(KNOB_LUM);
+
+  scaled_hz = map(hz, 0, 4095, range_hz[0], range_hz[1]);
+  scaled_lum = map(lum, 0, 4095, range_lum[0], range_lum[1]);
+
+  // Low-pass filter
+  const float alpha = 0.1;  // Smoothing factor, between 0 and 1
+  static float filtered_scaled_hz = scaled_hz;
+  static float filtered_scaled_lum = scaled_lum;
+  filtered_scaled_hz = alpha * scaled_hz + (1 - alpha) * filtered_scaled_hz;
+  filtered_scaled_lum = alpha * scaled_lum + (1 - alpha) * filtered_scaled_lum;
+  // Cast to int
+  scaled_hz = (int)filtered_scaled_hz;
+  scaled_lum = (int)filtered_scaled_lum;
+
+  if (scaled_hz != last_scaled_hz || scaled_lum != last_scaled_lum) {
+    last_scaled_hz = scaled_hz;
+    last_scaled_lum = scaled_lum;
+    updateMain(0, scaled_hz, scaled_lum);
+  }
+}
+
 void loop() {
   if (!isTiming) {  // change settings
-    int hz = analogRead(KNOB_HZ);
-    int lum = analogRead(KNOB_LUM);
-
-    scaled_hz = map(hz, 0, 4095, range_hz[0], range_hz[1]);
-    scaled_lum = map(lum, 0, 4095, range_lum[0], range_lum[1]);
-
-    if (scaled_hz != last_scaled_hz || scaled_lum != last_scaled_lum) {
-      last_scaled_hz = scaled_hz;
-      last_scaled_lum = scaled_lum;
-      updateMain(0, scaled_hz, scaled_lum);
-    }
-
+    checkInputs();
     if (!digitalRead(BUTTON_TOP) || !digitalRead(BUTTON_BOTTOM)) {
       if (!digitalRead(BUTTON_BOTTOM)) {
         timerSec = 30;
@@ -98,6 +110,20 @@ void loop() {
       timerStart = millis();
       ledToggleTime = millis();
     }
+    // test lux if top button is held down
+    bool isDebugging = false;
+    while (!digitalRead(BUTTON_TOP)) {
+      if (millis() - timerStart > 3000) {
+        isDebugging = true;
+        analogWrite(LED, map(scaled_lum, 0, 100, 0, 255));  // on
+        checkInputs();
+      }
+    }
+    // skip timing
+    if (isDebugging) {
+      isTiming = false;
+      analogWrite(LED, 0);  // off
+    }
   } else {  // countdown
     // toggle LED (Hz)
     unsigned long toggleInterval = 1000 / scaled_hz / 2;
@@ -106,9 +132,9 @@ void loop() {
       ledToggleTime += toggleInterval;  // Update the LED toggle time
       ledState = !ledState;             // Toggle state
       if (ledState) {
-        analogWrite(LED, map(scaled_lum, 0, 100, 0, 255)); // on
+        analogWrite(LED, map(scaled_lum, 0, 100, 0, 255));  // on
       } else {
-        analogWrite(LED, 0); // off
+        analogWrite(LED, 0);  // off
       }
     }
 
